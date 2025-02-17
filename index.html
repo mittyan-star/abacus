@@ -27,7 +27,7 @@
       z-index: 1000;
     }
     
-    /* wrapper（2つ目のコードを参照） */
+    /* wrapper */
     #wrapper {
       transform-origin: top left;
       padding-bottom: 30px;
@@ -43,7 +43,7 @@
       text-align: center;
       margin-bottom: 20px;
     }
-    /* 入力欄：pattern属性は補助的に設定 */
+    /* 入力欄 */
     #expression, #timeLimit {
       font-size: 18px;
       padding: 5px;
@@ -58,7 +58,7 @@
       cursor: pointer;
     }
     
-    /* メイン領域：縦書きの計算式リストとそろばん（2つ目のコードのUI） */
+    /* メイン領域 */
     #main {
       display: flex;
       gap: 10px;
@@ -76,7 +76,7 @@
       background: #fff;
       padding: 10px;
       box-sizing: border-box;
-      overflow-y: auto; /* アニメ中はJSで hidden に切替 */
+      overflow-y: auto; /* 自動再生時はJSで hidden に切替 */
       vertical-align: top;
     }
     #vertical-expression-list {
@@ -107,7 +107,7 @@
       background-color: #ffcc99;
     }
     
-    /* そろばん（2つ目のコードのUI） */
+    /* そろばん */
     #abacus {
       position: relative;
       width: 396px;   
@@ -193,7 +193,7 @@
       z-index: 4;
     }
     
-    /* ヒントカード（1つ目のコードの実装：初期表示は非表示） */
+    /* ヒントカード */
     #hint-card {
       position: fixed;
       bottom: 0;
@@ -230,7 +230,7 @@
     .level-list.active {
       display: block;
     }
-    /* ボタン（1つ目のコードのスタイル） */
+    /* ボタン */
     button {
       background-color: #F48FB1;
       color: #ffffff;
@@ -305,7 +305,7 @@
   
   <div id="wrapper">
     <h1>みっちゃんそろばん 統合版</h1>
-    <!-- 操作パネル：計算式、時間、はじめる・リセット・ヒントボタン -->
+    <!-- 操作パネル -->
     <div id="controls">
       <div>
         <input type="text" id="expression" placeholder="けいさんしきをいれてね (例: 999999+8888-777)">
@@ -382,7 +382,7 @@
     </div>
   </div>
   
-  <!-- ヒントカード（初期表示は非表示） -->
+  <!-- ヒントカード -->
   <div id="hint-card">
     <!-- 左カラム：レベル選択 -->
     <div class="hint-left">
@@ -422,17 +422,15 @@
   </div>
   
   <script>
-    // 入力欄制限：半角数字と「+」「-」のみ、連続する符号は許可しない
+    // 入力欄制限
     document.getElementById('expression').addEventListener('input', function(e) {
       let value = this.value;
-      // 半角数字と + - 以外を削除
       value = value.replace(/[^0-9+\-]/g, '');
-      // 連続する符号を許さない（2文字以上の連続符号を1文字にする）
       value = value.replace(/([+\-]){2,}/g, '$1');
       this.value = value;
     });
     
-    // グローバル変数（縦書き計算式＆そろばんアニメ用）
+    // グローバル変数
     let steps = [];
     let animationInterval = null;
     let globalLinesData = [];
@@ -498,6 +496,7 @@
       return result;
     }
     
+    // parseOperandに非ゼロの桁のインデックスを追加
     function parseOperand(operandStr) {
       let sign = "";
       let absStr = operandStr;
@@ -508,7 +507,12 @@
       const digitsArr = absStr.split('');
       const val = parseInt(absStr, 10);
       const placeVals = breakNumberIntoPlaceValues(val);
-      return { sign, digits: digitsArr, placeValues: placeVals };
+      const nonZeroIndices = [];
+      // 数字列の各桁について、0でない場合のみそのインデックスを記録
+      digitsArr.forEach((ch, idx) => {
+        if (ch !== "0") nonZeroIndices.push(idx);
+      });
+      return { sign, digits: digitsArr, placeValues: placeVals, nonZeroIndices };
     }
     
     function expressionToOperandLines(expr) {
@@ -537,7 +541,7 @@
       globalLinesData = [];
       const lines = expressionToOperandLines(expr);
       lines.forEach(lineStr => {
-        const { sign, digits, placeValues } = parseOperand(lineStr);
+        const { sign, digits, placeValues, nonZeroIndices } = parseOperand(lineStr);
         const li = document.createElement('li');
         let signElem = null;
         if (sign === "-") {
@@ -559,6 +563,7 @@
           sign,
           digits, 
           placeValues,
+          nonZeroIndices,
           signElem,
           digitElems
         });
@@ -575,6 +580,7 @@
       container.style.width = finalWidth + 'px';
     }
     
+    // buildCalculationStepsでは、各項で非ゼロ桁の mapping を利用して正しい digit index を設定
     function buildCalculationSteps(expr) {
       const tokens = expr.replace(/\s+/g, '').match(/(\d+|[+\-])/g);
       if (!tokens) throw new Error("式が正しくありません。");
@@ -582,10 +588,11 @@
       linePlaceToStepIndex = [];
       let currentValue = 0;
       const newSteps = [];
-      // 初期値：0にする
+      // 初期値：0
       newSteps.push({ value: 0, lineIndex: null, placeIndex: null });
       // 先頭項
       let operandIndex = 0;
+      const mapping0 = globalLinesData[0].nonZeroIndices;
       const firstParts = globalLinesData[0].placeValues;
       for (let j = 0; j < firstParts.length; j++) {
         currentValue += firstParts[j];
@@ -593,7 +600,7 @@
         newSteps.push({
           value: currentValue,
           lineIndex: 0,
-          placeIndex: j
+          placeIndex: mapping0[j]
         });
       }
       operandIndex++;
@@ -604,6 +611,7 @@
         const numStr = tokens[i+1];
         i += 2;
         if (!numStr || !/^\d+$/.test(numStr)) throw new Error("式の構文が不正です。");
+        const mapping = globalLinesData[operandIndex].nonZeroIndices;
         const parts = globalLinesData[operandIndex].placeValues;
         const lineIndex = operandIndex;
         for (let j = 0; j < parts.length; j++) {
@@ -616,7 +624,7 @@
           newSteps.push({
             value: currentValue,
             lineIndex,
-            placeIndex: j
+            placeIndex: mapping[j]
           });
         }
         operandIndex++;
@@ -680,10 +688,9 @@
       }, intervalMs);
     }
     
-    // replayStepは数字クリックによる再生用なので、スクロールバーを表示した状態で実行する
+    // replayStep（クリックによる再生）
     function replayStep(stepIndex) {
       const container = document.getElementById('vertical-expression-container');
-      // ここでは overflowY を変更せず、常にスクロールバーが表示される
       if (stepIndex <= 0) return;
       if (animationInterval) {
         clearInterval(animationInterval);
@@ -733,7 +740,7 @@
       }
     }
     
-    // 入力時に縦書き計算式リストを更新
+    // 入力時に縦書き計算式更新
     document.getElementById('expression').addEventListener('input', () => {
       const expr = document.getElementById('expression').value;
       displayVerticalExpression(expr);
@@ -787,7 +794,7 @@
       wrapper.style.transform = `scale(${scaleValue})`;
     });
     
-    // ページロード後、そろばんの高さに合わせて問題表示エリアの高さ調整
+    // ページロード後、そろばんの高さに合わせた調整
     window.addEventListener('load', () => {
       const abacusElem = document.getElementById('abacus');
       const problemContainer = document.getElementById('vertical-expression-container');
@@ -797,11 +804,11 @@
     });
     
     /* ==========================
-       ミニそろばん（ヒントカード内）のアニメーション実装（1つ目のコードより）
+       ミニそろばん（ヒントカード内）のアニメーション実装
     ========================== */
     const MINI_DIGIT_COUNT = 3;
-    const MINI_UPPER_DEFAULT = -6; // 非アクティブ
-    const MINI_UPPER_ACTIVE = 8;   // アクティブ
+    const MINI_UPPER_DEFAULT = -6;
+    const MINI_UPPER_ACTIVE = 8;
     const LOWER_DEFAULT_TOPS_MINI = [72, 100, 128, 156];
     const LOWER_ACTIVE_TOPS_MINI  = [42, 70, 98, 126];
     const DELAY_STEP = 500;
@@ -1088,9 +1095,7 @@
       });
     });
     
-    /* ==========================
-       ヒントカードの開閉（「ヒント」ボタン） （1つ目のコードより）
-    ========================== */
+    /* ヒントカードの開閉 */
     let hintVisible = false;
     const hintCard = document.getElementById('hint-card');
     const hintAddBtn = document.getElementById('hintAddBtn');
